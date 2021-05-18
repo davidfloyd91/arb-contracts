@@ -1,0 +1,5 @@
+# 🤖🪐💰
+
+```
+brownie test --interactive -s
+```
