@@ -2,22 +2,12 @@
 
 def test_stuff(
     arb,
-    curve_bbtc_pool,
-    curve_hbtc_pool,
-    curve_obtc_pool,
-    curve_pbtc_pool,
-    curve_renbtc_pool,
-    curve_sbtc_pool,
-    curve_tbtc_pool,
-    uniswap_weth_bbtc_pool,
-    uniswap_weth_hbtc_pool,
-    uniswap_weth_obtc_pool,
-    uniswap_weth_pbtc_pool,
-    uniswap_weth_renbtc_pool,
-    uniswap_weth_sbtc_pool,
-    uniswap_weth_tbtc_pool,
-    uniswap_weth_wbtc_pool
+    boss,
+    weth_address,
+    whale
 ):
+    whale.transfer(boss, '1000 ether')
+    my_flash_loan_call_tx = arb.myFlashLoanCall(weth_address, 20 * 10 ** 18, { 'from': boss })
     assert(False)
 
     ## test accepting, withdrawing ether
