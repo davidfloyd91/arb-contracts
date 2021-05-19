@@ -4,28 +4,21 @@ from brownie import Contract, accounts
 # need to change this all the time
 @pytest.fixture
 def undervalued_amount_out_min():
-    yield 1.48e8
+    yield 0
 
 @pytest.fixture
 def arb(
     Arb,
     boss,
     provider_address,
-    renbtc_address,
-    wbtc_address,
-    curve_sbtc_pool_renbtc_index,
-    curve_sbtc_pool_wbtc_index,
-    undervalued_amount_out_min,
-    curve_sbtc_pool_address
+    wbtc_address
 ):
     yield Arb.deploy(
         provider_address,
-        renbtc_address,
-        wbtc_address,
-        curve_sbtc_pool_renbtc_index,
-        curve_sbtc_pool_wbtc_index,
-        undervalued_amount_out_min,
-        curve_sbtc_pool_address,
+        "0x6b3595068778dd592e39a122f4f5a5cf09c90fe2",
+        0,
+        0,
+        True,
         { 'from': boss }
     )
 
@@ -146,13 +139,13 @@ def curve_address_provider_address():
 # def curve_pbtc_pool_address():
 #     yield "0x7F55DDe206dbAD629C080068923b36fe9D6bDBeF"
 
-# @pytest.fixture
-# def curve_renbtc_pool_address():
-#     yield "0x93054188d876f558f4a66B2EF1d97d16eDf0895B"
-
 @pytest.fixture
-def curve_sbtc_pool_address():
-    yield "0x7fC77b5c7614E1533320Ea6DDc2Eb61fa00A9714"
+def curve_renbtc_pool_address():
+    yield "0x93054188d876f558f4a66B2EF1d97d16eDf0895B"
+
+# @pytest.fixture
+# def curve_sbtc_pool_address():
+#     yield "0x7fC77b5c7614E1533320Ea6DDc2Eb61fa00A9714"
 
 # @pytest.fixture
 # def curve_tbtc_pool_address():

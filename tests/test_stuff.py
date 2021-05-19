@@ -7,7 +7,7 @@ def test_stuff(
     whale
 ):
     whale.transfer(boss, '1000 ether')
-    my_flash_loan_call_tx = arb.myFlashLoanCall(weth_address, 20 * 10 ** 18, { 'from': boss })
+    my_flash_loan_call_tx = arb.myFlashLoanCall(weth_address, 2 * 10 ** 18, { 'from': boss })
     assert(False)
 
     ## test accepting, withdrawing ether

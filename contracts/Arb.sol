@@ -5,7 +5,6 @@ import { ILendingPool } from "../interfaces/ILendingPool.sol";
 import { ILendingPoolAddressesProvider } from "../interfaces/ILendingPoolAddressesProvider.sol";
 import { IERC20 } from "../interfaces/IERC20.sol";
 import { IUniswapV2Router02 } from "../interfaces/IUniswapV2Router02.sol";
-import { ICurveStableSwap } from "../interfaces/ICurveStableSwap.sol";
 
 /** 
     !!!
@@ -16,68 +15,52 @@ import { ICurveStableSwap } from "../interfaces/ICurveStableSwap.sol";
 contract Arb is FlashLoanReceiverBase {
     string public name = "Arb";
 
-    address payable _owner;
+    address payable owner;
 
-    address public undervalued;
-    address public overvalued;
-    uint public undervaluedAmountOutMin;
-    address public poolAddress;
-    ICurveStableSwap public pool;
-
-    int128 public undervaluedIndex;
-    int128 public overvaluedIndex;
-    bool public isUnderlying;
+    address private sampo;
+    uint private sampoOutMin;
+    uint private assetOutMin;
+    bool uniToSushi;
 
     IUniswapV2Router02 UniswapV2Router02 = IUniswapV2Router02(
         address(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D)
     );
 
+    IUniswapV2Router02 SushiV2Router02 = IUniswapV2Router02(
+        address(0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F)
+    );
+
+    event GotWeth(uint wethAmount, uint256 owed);
+
     constructor(
         ILendingPoolAddressesProvider provider,
-        address _undervalued,
-        address _overvalued,
-        int128 _undervaluedIndex,
-        int128 _overvaluedIndex,
-        uint _undervaluedAmountOutMin,
-        address _poolAddress
+        address _sampo,
+        uint _sampoOutMin,
+        uint _assetOutMin,
+        bool _uniToSushi
     ) public FlashLoanReceiverBase(provider) {
-        _owner = msg.sender;
-
-        undervalued = _undervalued;
-        overvalued = _overvalued;
-
-        undervaluedIndex = _undervaluedIndex;
-        overvaluedIndex = _overvaluedIndex;
-
-        undervaluedAmountOutMin = _undervaluedAmountOutMin;
-
-        poolAddress = _poolAddress;
-        pool = ICurveStableSwap(_poolAddress);
+        owner = msg.sender;
+        sampo = _sampo;
+        sampoOutMin = _sampoOutMin;
+        assetOutMin = _assetOutMin;
+        uniToSushi = _uniToSushi;
     }
 
     modifier onlyOwner() {
-        require(_owner == msg.sender, "caller is not the owner");
+        require(owner == msg.sender, "caller is not the owner");
         _;
     }
 
-    function updatePool(
-        address _undervalued,
-        address _overvalued,
-        int128 _undervaluedIndex,
-        int128 _overvaluedIndex,
-        uint _undervaluedAmountOutMin,
-        address _poolAddress
+    function updateParams(
+        address _sampo,
+        uint _sampoOutMin,
+        uint _assetOutMin,
+        bool _uniToSushi
     ) public onlyOwner {
-        undervalued = _undervalued;
-        overvalued = _overvalued;
-
-        undervaluedIndex = _undervaluedIndex;
-        overvaluedIndex = _overvaluedIndex;
-
-        undervaluedAmountOutMin = _undervaluedAmountOutMin;
-
-        poolAddress = _poolAddress;
-        pool = ICurveStableSwap(_poolAddress);
+        sampo = _sampo;
+        sampoOutMin = _sampoOutMin;
+        assetOutMin = _assetOutMin;
+        uniToSushi = _uniToSushi;
     }
 
     function executeOperation(
@@ -91,52 +74,58 @@ contract Arb is FlashLoanReceiverBase {
         override
         returns (bool)
     {
+        IUniswapV2Router02 inPool;
+        IUniswapV2Router02 outPool;
+
+        if (uniToSushi) {
+            inPool = UniswapV2Router02;
+            outPool = SushiV2Router02;
+        } else {
+            inPool = SushiV2Router02;
+            outPool = UniswapV2Router02;
+        }
+
         IERC20 asset = IERC20(assets[0]);
         uint256 amount = amounts[0];
         uint256 premium = premiums[0];
 
-        require(asset.approve(address(UniswapV2Router02), amount), "approve failed");
+        asset.approve(address(inPool), amount);
 
         address[] memory path = new address[](2);
-        path[0] = UniswapV2Router02.WETH();
-        path[1] = undervalued;
+        path[0] = address(asset); // inPool.WETH();
+        path[1] = sampo;
 
-        uint[] memory undervaluedAmounts = UniswapV2Router02.swapExactTokensForTokens(
+        uint[] memory sampoAmounts = inPool.swapExactTokensForTokens(
             amount,
-            undervaluedAmountOutMin,
+            sampoOutMin,
             path,
             address(this),
             block.timestamp + 1000
         );
 
-        require(undervaluedAmounts.length > 0, "uniswap trade into undervalued failed");
-        uint undervaluedAmount = undervaluedAmounts[1];
-        
-        IERC20(undervalued).approve(poolAddress, undervaluedAmount);
+        uint sampoAmount = sampoAmounts[1];
 
-        uint256 dy = pool.get_dy(undervaluedIndex, overvaluedIndex, undervaluedAmount);
-        
-        // pool.exchange appears to go through fine
-        uint256 overvaluedReceived = pool.exchange(undervaluedIndex, overvaluedIndex, undervaluedAmount, dy.mul(999).div(1000));
-
-        // this doesn't get reached -- not sure why
-        require(false, "whyyyyyy");
-
-        IERC20(overvalued).approve(address(UniswapV2Router02), overvaluedReceived);
+        IERC20(sampo).approve(address(outPool), sampoAmount);
 
         address[] memory escapePath = new address[](2);
-        escapePath[0] = overvalued;
-        escapePath[1] = UniswapV2Router02.WETH();
+        escapePath[0] = sampo;
+        escapePath[1] = address(asset); // outPool.WETH();
 
-        uint[] memory _wethAmounts = UniswapV2Router02.swapExactTokensForTokens(
-            overvaluedReceived,
-            0, // amount
+        uint[] memory assetAmounts = outPool.swapExactTokensForTokens(
+            sampoAmount,
+            assetOutMin,
             escapePath,
             address(this),
             block.timestamp + 1000
         );
 
-        IERC20(asset).approve(address(LENDING_POOL), amount.add(premium));
+        uint assetAmount = assetAmounts[1];
+
+        uint256 owed = amount.add(premium);
+
+        emit GotWeth(assetAmount, owed);
+
+        asset.approve(address(LENDING_POOL), owed);
 
         return true;
     }
@@ -169,11 +158,11 @@ contract Arb is FlashLoanReceiverBase {
     }
 
     function sendEther(uint256 _amount) public onlyOwner {
-        _owner.transfer(_amount);
+        owner.transfer(_amount);
     }
 
     function sendToken(uint256 _amount, address _token) public onlyOwner {
-        IERC20(_token).transfer(_owner, _amount);
+        IERC20(_token).transfer(owner, _amount);
     }
 
     function friendlyFallback() public payable {}
