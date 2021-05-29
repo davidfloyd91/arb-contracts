@@ -1,9 +1,9 @@
 pragma solidity 0.6.12;
 
 import { FlashLoanReceiverBase } from "../interfaces/FlashLoanReceiverBase.sol";
+import { IERC20 } from "../interfaces/IERC20.sol";
 import { ILendingPool } from "../interfaces/ILendingPool.sol";
 import { ILendingPoolAddressesProvider } from "../interfaces/ILendingPoolAddressesProvider.sol";
-import { IERC20 } from "../interfaces/IERC20.sol";
 import { IUniswapV2Router02 } from "../interfaces/IUniswapV2Router02.sol";
 
 /** 
@@ -15,35 +15,30 @@ import { IUniswapV2Router02 } from "../interfaces/IUniswapV2Router02.sol";
 contract Arb is FlashLoanReceiverBase {
     string public name = "Arb";
 
-    address payable owner;
+    address payable public owner;
 
-    address private sampo;
-    uint private sampoOutMin;
-    uint private assetOutMin;
-    bool uniToSushi;
+    address zeroAddress;
+    uint zeroOutMin;
+    IERC20 zeroAsset;
+
+    address oneAddress;
+    uint oneOutMin;
+    IERC20 oneAsset;
+
+    address twoAddress;
+    uint twoOutMin;
+    IERC20 twoAsset;
 
     IUniswapV2Router02 UniswapV2Router02 = IUniswapV2Router02(
         address(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D)
     );
 
-    IUniswapV2Router02 SushiV2Router02 = IUniswapV2Router02(
-        address(0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F)
-    );
-
-    event GotWeth(uint wethAmount, uint256 owed);
+    event GotZeroAssetBack(uint amount, uint owed);
 
     constructor(
-        ILendingPoolAddressesProvider provider,
-        address _sampo,
-        uint _sampoOutMin,
-        uint _assetOutMin,
-        bool _uniToSushi
+        ILendingPoolAddressesProvider provider
     ) public FlashLoanReceiverBase(provider) {
         owner = msg.sender;
-        sampo = _sampo;
-        sampoOutMin = _sampoOutMin;
-        assetOutMin = _assetOutMin;
-        uniToSushi = _uniToSushi;
     }
 
     modifier onlyOwner() {
@@ -52,94 +47,53 @@ contract Arb is FlashLoanReceiverBase {
     }
 
     function updateParams(
-        address _sampo,
-        uint _sampoOutMin,
-        uint _assetOutMin,
-        bool _uniToSushi
+        address _zeroAddress,
+        uint _zeroOutMin,
+        address _oneAddress,
+        uint _oneOutMin,
+        address _twoAddress,
+        uint _twoOutMin
+    ) private {
+        zeroAddress = _zeroAddress;
+        zeroOutMin = _zeroOutMin;
+        zeroAsset = IERC20(_zeroAddress);
+
+        oneAddress = _oneAddress;
+        oneOutMin = _oneOutMin;
+        oneAsset = IERC20(_oneAddress);
+
+        twoAddress = _twoAddress;
+        twoOutMin = _twoOutMin;
+        twoAsset = IERC20(_twoAddress);
+    }
+
+    function getFlashLoan(
+        uint _zeroAmount,
+        address _zeroAddress,
+        uint _zeroOutMin,
+        address _oneAddress,
+        uint _oneOutMin,
+        address _twoAddress,
+        uint _twoOutMin
     ) public onlyOwner {
-        sampo = _sampo;
-        sampoOutMin = _sampoOutMin;
-        assetOutMin = _assetOutMin;
-        uniToSushi = _uniToSushi;
-    }
-
-    function executeOperation(
-        address[] calldata assets,
-        uint256[] calldata amounts,
-        uint256[] calldata premiums,
-        address initiator,
-        bytes calldata params
-    )
-        external
-        override
-        returns (bool)
-    {
-        IUniswapV2Router02 inPool;
-        IUniswapV2Router02 outPool;
-
-        if (uniToSushi) {
-            inPool = UniswapV2Router02;
-            outPool = SushiV2Router02;
-        } else {
-            inPool = SushiV2Router02;
-            outPool = UniswapV2Router02;
-        }
-
-        IERC20 asset = IERC20(assets[0]);
-        uint256 amount = amounts[0];
-        uint256 premium = premiums[0];
-
-        asset.approve(address(inPool), amount);
-
-        address[] memory path = new address[](2);
-        path[0] = address(asset); // inPool.WETH();
-        path[1] = sampo;
-
-        uint[] memory sampoAmounts = inPool.swapExactTokensForTokens(
-            amount,
-            sampoOutMin,
-            path,
-            address(this),
-            block.timestamp + 1000
+        updateParams(
+            _zeroAddress,
+            _zeroOutMin,
+            _oneAddress,
+            _oneOutMin,
+            _twoAddress,
+            _twoOutMin
         );
 
-        uint sampoAmount = sampoAmounts[1];
-
-        IERC20(sampo).approve(address(outPool), sampoAmount);
-
-        address[] memory escapePath = new address[](2);
-        escapePath[0] = sampo;
-        escapePath[1] = address(asset); // outPool.WETH();
-
-        uint[] memory assetAmounts = outPool.swapExactTokensForTokens(
-            sampoAmount,
-            assetOutMin,
-            escapePath,
-            address(this),
-            block.timestamp + 1000
-        );
-
-        uint assetAmount = assetAmounts[1];
-
-        uint256 owed = amount.add(premium);
-
-        emit GotWeth(assetAmount, owed);
-
-        asset.approve(address(LENDING_POOL), owed);
-
-        return true;
-    }
-    
-    function myFlashLoanCall(address _address, uint256 _amount) public onlyOwner {
         address receiverAddress = address(this);
 
         address[] memory assets = new address[](1);
-        assets[0] = address(_address);
+        assets[0] = address(_zeroAddress);
 
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = _amount;
+        uint[] memory amounts = new uint[](1);
+        amounts[0] = _zeroAmount;
 
-        uint256[] memory modes = new uint256[](1);
+        uint[] memory modes = new uint[](1);
         modes[0] = 0; // no debt
 
         address onBehalfOf = address(this);
@@ -157,13 +111,86 @@ contract Arb is FlashLoanReceiverBase {
         );
     }
 
-    function sendEther(uint256 _amount) public onlyOwner {
+    function executeOperation(
+        address[] calldata assets,
+        uint[] calldata amounts,
+        uint[] calldata premiums,
+        address initiator,
+        bytes calldata params
+    )
+        external
+        override
+        returns (bool)
+    {
+        uint zeroAmount = amounts[0];
+        uint premium = premiums[0];
+
+        require(zeroAddress == assets[0], "zeroAddress does not match received asset");
+
+        zeroAsset.approve(address(UniswapV2Router02), zeroAmount);
+        address[] memory zeroOnePath = new address[](2);
+        zeroOnePath[0] = zeroAddress;
+        zeroOnePath[1] = oneAddress;
+
+        uint[] memory oneAmounts = UniswapV2Router02.swapExactTokensForTokens(
+            zeroAmount,
+            oneOutMin,
+            zeroOnePath,
+            address(this),
+            block.timestamp + 1000000
+        );
+
+        uint oneAmount = oneAmounts[1];
+
+        oneAsset.approve(address(UniswapV2Router02), oneAmount);
+        address[] memory oneTwoPath = new address[](2);
+        oneTwoPath[0] = oneAddress;
+        oneTwoPath[1] = twoAddress;
+
+        uint[] memory twoAmounts = UniswapV2Router02.swapExactTokensForTokens(
+            oneAmount,
+            twoOutMin,
+            oneTwoPath,
+            address(this),
+            block.timestamp + 1000000
+        );
+
+        uint twoAmount = twoAmounts[1];
+
+        twoAsset.approve(address(UniswapV2Router02), twoAmount);
+        
+        address[] memory twoZeroPath = new address[](2);
+        twoZeroPath[0] = twoAddress;
+        twoZeroPath[1] = zeroAddress;
+
+        uint[] memory _zeroAmounts = UniswapV2Router02.swapExactTokensForTokens(
+            twoAmount,
+            zeroOutMin,
+            twoZeroPath,
+            address(this),
+            block.timestamp + 1000000
+        );
+
+        uint owed = zeroAmount.add(premium);
+
+        emit GotZeroAssetBack(_zeroAmounts[1], owed);
+
+        zeroAsset.approve(address(LENDING_POOL), owed);
+
+        return true;
+    }
+
+    function updateOwner(address payable _owner) public onlyOwner {
+        owner = _owner;
+    }
+
+    function withdrawEther(uint _amount) public onlyOwner {
         owner.transfer(_amount);
     }
 
-    function sendToken(uint256 _amount, address _token) public onlyOwner {
+    function withdrawToken(uint _amount, address _token) public onlyOwner {
         IERC20(_token).transfer(owner, _amount);
     }
 
-    function friendlyFallback() public payable {}
+    fallback() external payable {}
 }
