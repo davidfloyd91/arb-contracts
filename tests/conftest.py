@@ -49,6 +49,30 @@ def puppet(accounts):
 ##########
 
 @pytest.fixture
+def dai_address():
+    yield "0x6b175474e89094c44da98b954eedeac495271d0f"
+
+@pytest.fixture
+def dai_contract(dai_address):
+    yield Contract(dai_address)
+
+@pytest.fixture
+def usdc_address():
+    yield "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+
+@pytest.fixture
+def usdc_contract(usdc_address):
+    yield Contract(usdc_address)
+
+@pytest.fixture
+def gusd_address():
+    yield "0x056fd409e1d7a124bd7017459dfea2f387b6d5cd"
+
+@pytest.fixture
+def gusd_contract(gusd_address):
+    yield Contract(gusd_address)
+
+@pytest.fixture
 def uni_address():
     yield "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984"
 

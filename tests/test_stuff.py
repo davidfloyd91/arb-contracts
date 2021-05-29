@@ -57,17 +57,18 @@ def test_receive_and_withdraw_tokens(
     owner_balance_after = wbtc_contract.balanceOf(owner)
     assert(owner_balance_after - owner_balance_before == receive_amount)
 
-def test_flash_loan(arb_contract, owner, uni_address, wbtc_address, weth_address):
+# this doesn't work if you call with usdt can't explain why
+def test_flash_loan(arb_contract, owner, dai_address, usdc_address, gusd_address):
     with reverts("SafeERC20: low-level call failed"):
         arb_contract.getFlashLoan(
-            100_000 * 10 ** 6,
-            wbtc_address,
+            100 * 10 ** 6,
+            usdc_address,
             0,
-            uni_address,
+            dai_address,
             0,
-            weth_address,
+            gusd_address,
             0,
             {'from': owner}
         )
-    
     print("GotZeroAssetBack:", history[-1].events['GotZeroAssetBack'])
+    # GotZeroAssetBack: OrderedDict([('amount', 87736337), ('owed', 100090000)])
